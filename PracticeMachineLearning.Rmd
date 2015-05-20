@@ -1,0 +1,73 @@
+---
+title: "A Study of Exercise Manner"
+author: "Rong Xie"
+date: "May 18, 2015"
+output: html_document
+---
+
+This study is about predicting the manner in which people did their exercise. In this study, we are using the Weight Lifting Exercise Dataset[1] , which consists of statistics from six young participants who were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). The goal is to predict the classes through building a model on a large training set (http://groupware.les.inf.puc-rio.br/har). 
+
+## Loading and Cleaning Data
+```{r}
+training <- read.csv("/Users/rxie/pml-training.csv", na.strings=c("NA",""))
+testing <- read.csv("/Users/rxie/pml-testing.csv", na.strings=c("NA",""))
+dim(training)
+NAs <- apply(training,2,function(x) {sum(is.na(x))})
+isNAs <- apply(training,2,function(x) {sum(is.na(x) > 0)})
+length(NAs[isNAs])
+training <- training[, !isNAs]
+testing <- testing[, !isNAs]
+dim(training)
+```
+## Model Training and Prediction
+### Feature Selection
+After loading and cleaning data, we have 60 fields in both training and testing datasets, 59 of which are potential features, and 1 is the class we need to predict. In order to training a better model, we further eliminate fields that are seemingly not related to our final prediction, such as names, time, and new_windows, etc. Specifically, fields 1 to 8 will be excluded from our datasets.
+```{r}
+rIndexes <- as.integer(c(1, 2, 3, 4, 5, 6, 7, 8))
+trainingSet <- training[, -rIndexes]
+testingSet <- testing[, -rIndexes]
+classe <- trainingSet$classe
+trainingSet <- trainingSet[, sapply(trainingSet, is.numeric)]
+testingSet <- testingSet[, sapply(testingSet, is.numeric)]
+trainingSet$classe <- classe
+```
+
+### Data Slicing
+Then, the trainingSet is splitted into a pure training data set (70%) and a validation data set (30%). Note that the validation data set will be used to conduct cross validation in the future phases.
+
+```{r}
+library(caret)
+set.seed(1989)
+inTrain <- createDataPartition(y=trainingSet$classe, p=0.70, list=FALSE)
+trainData <- trainingSet[inTrain,]
+testData <- trainingSet[-inTrain,]
+```
+
+### Model Training
+The random forest algorithm is applied to build our predictive model, since it has good performance in prediction accuracy. The 5-fold cross validation is used when we building the model. The figure below shows how importance each feature is to our prediction.
+
+```{r}
+controlRF <- trainControl(method="cv", 5)
+modelRF <- train(classe ~., data=trainData, method="rf", trControl=controlRF, ntree=250)
+modelRF
+plot(varImp(modelRF))
+```
+
+
+### Prediction and Evaluation
+The predictive model is applied to the validation set. From the statistics we have below, it is expected to have approximated 99.22% accuracy and about 0.78% of out-of-sample error if we applied this model to the actual testing dataset.
+
+```{r}
+predictRF <- predict(modelRF, testData)
+confusionMatrix(testData$classe, predictRF)
+accuracy <- postResample(predictRF, testData$classe)
+accuracy
+err <- 1 - as.numeric(confusionMatrix(testData$classe, predictRF)$overall[1])
+err
+result <- predict(modelRF, testingSet[, -length(names(testingSet))])
+result
+ 
+```
+
+Reference
+[1] Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
